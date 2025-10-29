@@ -1,0 +1,47 @@
+name: Build Certify (Windows)
+
+on:
+  workflow_dispatch: {}    # manuálne spustenie v Actions
+  push:
+    branches: [ main, master ]  # spustí sa aj pri pushi
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v2
+
+      - name: Restore NuGet packages
+        run: nuget restore Certify.sln
+
+      # Voliteľné: nájdi MSBuild z inštalácie VS
+      - name: Locate MSBuild
+        id: msbuild
+        shell: pwsh
+        run: |
+          $msbuild = &"${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          if (-not $msbuild) { throw "MSBuild not found" }
+          echo "msbuild=$msbuild" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Build solution (Release)
+        run: '"${{ steps.msbuild.outputs.msbuild }}" Certify.sln /p:Configuration=Release /m /verbosity:minimal /p:WarningLevel=0 /p:UseSharedCompilation=false'
+
+      # (Voliteľné) Zobraz, kam sa uložil výstup
+      - name: List build outputs
+        shell: pwsh
+        run: |
+          Get-ChildItem -Recurse -File -Path .\ -Include *.exe,*.dll | Sort-Object FullName | Format-Table -AutoSize | Out-String | Write-Host
+
+      - name: Upload Release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: certify-release
+          path: |
+            **\bin\Release\**\*.exe
+            **\bin\Release\**\*.dll
+            **\bin\Release\**\*.pdb
